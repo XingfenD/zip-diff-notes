@@ -8,7 +8,10 @@ temp/
 
 tmp/
 
+zip_analyzer/*.zip
+
 *.exe
 
 *.out
 
+.DS_Store

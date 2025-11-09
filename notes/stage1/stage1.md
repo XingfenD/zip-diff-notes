@@ -36,11 +36,11 @@
 ```mermaid
 sequenceDiagram
     participant Fuzzer as ZIPDIFF主控制器
-    participant Generator as 测试用例生成器
-    participant Mutator as 变异引擎
+    participant Generator as 样本生成器
+    participant Mutator as 变异器
     participant Executor as 解析器执行器
     participant Analyzer as 差异分析器
-    participant Optimizer as 反馈优化器
+    participant Optimizer as 反馈优化
 
     Fuzzer->>Generator: 生成初始种子
     Generator->>Fuzzer: 返回初始ZIP文件集

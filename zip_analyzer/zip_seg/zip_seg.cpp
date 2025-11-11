@@ -90,9 +90,6 @@ uint16_t ZipHandler::parseStream() {
 }
 
 void ZipHandler::print() const {
-    if (parse_mode == "stream") {
-        std::cout << "Local File Header Count: " << local_file_header_count << std::endl;
-    }
     printLocalFileHeaders();
     printCentralDirectoryHeaders();
     printEndOfCentralDirectoryRecord();

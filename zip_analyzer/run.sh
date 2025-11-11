@@ -26,16 +26,16 @@ else
     echo "zip_demo.zip已存在，跳过创建步骤"
 fi
 
-# 编译zip_parser.c为可执行文件
-gcc -o zip_parser.out zip_parser.c
+# # 编译zip_parser.c为可执行文件
+# gcc -o zip_parser.out zip_parser.c
 
-# 检查编译是否成功
-if [ $? -eq 0 ]; then
-    echo "编译成功"
+# # 检查编译是否成功
+# if [ $? -eq 0 ]; then
+#     echo "编译成功"
 
-    # 调用可执行文件解析zip文件
-    ./zip_parser.out zip_demo.zip
-else
-    echo "编译失败"
-    exit 1
-fi
+#     # 调用可执行文件解析zip文件
+#     ./zip_parser.out zip_demo.zip
+# else
+#     echo "编译失败"
+#     exit 1
+# fi

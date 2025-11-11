@@ -4,7 +4,65 @@
 #include <iostream>
 #include <stdexcept>
 
-// 实现LocalFileHeader::print方法
+ZipHandler::ZipHandler(std::ifstream& file) : file(std::move(file)) {}
+
+bool ZipHandler::parse(std::string mode) {
+    if (mode == "standard") {
+        return parseStandard();
+    } else if (mode == "stream") {
+        return parseStream();
+    } else {
+        return false;
+    }
+}
+
+bool ZipHandler::parseStandard() {
+    if (!file.is_open() || !file.good()) {
+        return false;
+    }
+    // 解析End of Central Directory Record
+    // 使用修改后的findFromEnd函数找到记录位置
+    std::streampos record_pos = EndOfCentralDirectoryRecord::findFromEnd(file);
+    if (record_pos == -1) {
+        return false;
+    }
+
+    // 移动文件指针到记录位置并读取
+    file.seekg(record_pos);
+    if (!end_of_central_directory_record.readFromFile(file)) {
+        return false;
+    }
+
+    return true;
+}
+
+bool ZipHandler::parseStream() {
+    return true;
+}
+
+void ZipHandler::print() const {
+    printLocalFileHeaders();
+    printCentralDirectoryHeaders();
+    printEndOfCentralDirectoryRecord();
+}
+
+void ZipHandler::printLocalFileHeaders() const {
+    for (const auto& header : local_file_headers) {
+        header.print();
+    }
+}
+void ZipHandler::printCentralDirectoryHeaders() const {
+    for (const auto& header : central_directory_headers) {
+        header.print();
+    }
+}
+
+void ZipHandler::printEndOfCentralDirectoryRecord() const {
+    end_of_central_directory_record.print();
+}
+
+
+
 void LocalFileHeader::print() const {
     std::cout << "Local File Header Information:" << std::endl;
     std::cout << "  Signature: 0x" << std::hex << signature << std::dec << std::endl;
@@ -19,14 +77,13 @@ void LocalFileHeader::print() const {
     std::cout << "  Filename Length: " << filename_length << " bytes" << std::endl;
     std::cout << "  Extra Field Length: " << extra_field_length << " bytes" << std::endl;
 
-    if (filename_length > 0 && filename) {
-        std::cout << "  Filename: " << filename.get() << std::endl;
+    if (filename_length > 0) {
+        std::cout << "  Filename: " << filename << std::endl;
     }
 
-    // 注意：通常不直接打印扩展区数据，因为它是二进制数据
+    /* will not print extra field */
 }
 
-// 实现readFromFile方法
 bool LocalFileHeader::readFromFile(std::ifstream& file) {
     if (!file.is_open() || !file.good()) {
         return false;
@@ -53,9 +110,8 @@ bool LocalFileHeader::readFromFile(std::ifstream& file) {
 
     // 读取文件名
     if (filename_length > 0) {
-        filename = std::make_unique<char[]>(filename_length + 1);  // +1 for null terminator
-        file.read(filename.get(), filename_length);
-        filename[filename_length] = '\0';  // 添加null终止符
+        filename = std::string(filename_length, '\0');
+        file.read(&filename[0], filename_length);
     }
 
     // 读取扩展区数据
@@ -87,8 +143,8 @@ void CentralDirectoryHeader::print() const {
     std::cout << "  External Attr: 0x" << std::hex << external_attr << std::dec << std::endl;
     std::cout << "  Relative Offset: 0x" << std::hex << relative_offset << std::dec << std::endl;
 
-    if (filename_length > 0 && filename) {
-        std::cout << "  Filename: " << filename.get() << std::endl;
+    if (filename_length > 0) {
+        std::cout << "  Filename: " << filename << std::endl;
     }
 
     // 注意：通常不直接打印扩展区数据，因为它是二进制数据
@@ -125,9 +181,8 @@ bool CentralDirectoryHeader::readFromFile(std::ifstream& file) {
     relative_offset = readLittleEndian<uint32_t>(file);
     // 读取文件名
     if (filename_length > 0) {
-        filename = std::make_unique<char[]>(filename_length + 1);  // +1 for null terminator
-        file.read(filename.get(), filename_length);
-        filename[filename_length] = '\0';  // 添加null终止符
+        filename = std::string(filename_length, '\0');
+        file.read(&filename[0], filename_length);
     }
 
     // 读取扩展区数据
@@ -150,8 +205,8 @@ void EndOfCentralDirectoryRecord::print() const {
     std::cout << "  Central Directory Offset: 0x" << std::hex << central_dir_offset << std::dec << std::endl;
     std::cout << "  ZIP File Comment Length: " << zip_file_comment_length << " bytes" << std::endl;
 
-    if (zip_file_comment_length > 0 && zip_file_comment) {
-        std::cout << "  ZIP File Comment: " << zip_file_comment.get() << std::endl;
+    if (zip_file_comment_length > 0) {
+        std::cout << "  ZIP File Comment: " << zip_file_comment << std::endl;
     }
 }
 
@@ -178,10 +233,86 @@ bool EndOfCentralDirectoryRecord::readFromFile(std::ifstream& file) {
 
     // 读取zip文件注释
     if (zip_file_comment_length > 0) {
-        zip_file_comment = std::make_unique<char[]>(zip_file_comment_length + 1);  // +1 for null terminator
-        file.read(zip_file_comment.get(), zip_file_comment_length);
-        zip_file_comment[zip_file_comment_length] = '\0';  // 添加null终止符
+        zip_file_comment = std::string(zip_file_comment_length, '\0');
+        file.read(&zip_file_comment[0], zip_file_comment_length);
     }
 
     return !file.fail();
 }
+
+std::streampos EndOfCentralDirectoryRecord::findFromEnd(std::ifstream& file) {
+    if (!file.is_open() || !file.good()) {
+        return -1; // 返回无效位置
+    }
+
+    // 保存当前文件位置
+    std::streampos original_pos = file.tellg();
+
+    // 获取文件大小
+    file.seekg(0, std::ios::end);
+    std::streampos file_size = file.tellg();
+
+    // EndOfCentralDirectoryRecord最小大小为22字节（不包括注释）
+    // 最大注释长度为65535字节，所以我们从文件末尾开始向前搜索
+    // 但要确保我们不会搜索超过文件的前半部分（避免过度搜索）
+    const size_t max_search_size = std::min(static_cast<size_t>(file_size) / 2, static_cast<size_t>(65535 + 22));
+
+    // 从文件末尾向前搜索，但留出EndOfCentralDirectoryRecord的最小大小
+    std::streampos search_start_pos = file_size - static_cast<std::streampos>(max_search_size);
+    if (search_start_pos < 0) {
+        search_start_pos = 0;
+    }
+
+    file.seekg(search_start_pos, std::ios::beg);
+
+    // 读取搜索区域的内容到缓冲区
+    size_t buffer_size = static_cast<size_t>(file_size - search_start_pos);
+    std::vector<char> buffer(buffer_size);
+    file.read(buffer.data(), buffer_size);
+
+    if (file.fail()) {
+        // 恢复文件位置
+        file.seekg(original_pos, std::ios::beg);
+        return -1; // 返回无效位置
+    }
+
+    // 从缓冲区末尾向前搜索签名
+    const uint32_t signature = END_OF_CENTRAL_DIRECTORY_SIG;
+    const char* signature_bytes = reinterpret_cast<const char*>(&signature);
+
+    for (size_t i = buffer_size - 4; i > 0; --i) {
+        bool signature_match = true;
+        for (size_t j = 0; j < 4; ++j) {
+            if (buffer[i + j] != signature_bytes[j]) {
+                signature_match = false;
+                break;
+            }
+        }
+
+        if (signature_match) {
+            // 找到签名，计算其在文件中的绝对位置
+            std::streampos record_pos = search_start_pos + static_cast<std::streampos>(i);
+
+            // 移动文件指针到记录开始位置
+            file.seekg(record_pos, std::ios::beg);
+
+            // 验证这是一个有效的记录
+            // 移动文件指针到记录开始位置并读取签名进行确认
+            file.seekg(record_pos, std::ios::beg);
+            uint32_t temp_signature = readLittleEndian<uint32_t>(file);
+
+            // 恢复文件位置
+            file.seekg(original_pos, std::ios::beg);
+
+            // 如果签名有效，返回找到的位置
+            if (temp_signature == END_OF_CENTRAL_DIRECTORY_SIG) {
+                return record_pos;
+            }
+        }
+    }
+
+    // 未找到有效签名，恢复文件位置
+    file.seekg(original_pos, std::ios::beg);
+    return -1; // 返回无效位置
+}
+

@@ -15,3 +15,7 @@ zip_analyzer/*.zip
 *.out
 
 .DS_Store
+
+*.o
+
+*.d

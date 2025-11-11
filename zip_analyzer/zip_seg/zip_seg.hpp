@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <memory>
 #include <fstream>
-
+#include <vector>
 
 class ZipSeg {
 public:
@@ -13,7 +13,7 @@ public:
     virtual ~ZipSeg() = default;
 };
 
-class LocalFileHeader : public ZipSeg {
+class LocalFileHeader: public ZipSeg {
 public:
     void print() const override;
     bool readFromFile(std::ifstream& file) override;
@@ -31,11 +31,11 @@ private:
     uint32_t uncompressed_size;
     uint16_t filename_length;
     uint16_t extra_field_length;
-    std::unique_ptr<char[]> filename;
+    std::string filename;
     std::unique_ptr<uint8_t[]> extra_field;
 };
 
-class CentralDirectoryHeader : public ZipSeg {
+class CentralDirectoryHeader: public ZipSeg {
 public:
     void print() const override;
     bool readFromFile(std::ifstream& file) override;
@@ -59,15 +59,17 @@ private:
     uint16_t internal_attr;
     uint32_t external_attr;
     uint32_t relative_offset;
-    std::unique_ptr<char[]> filename;
+    std::string filename;
     std::unique_ptr<uint8_t[]> extra_field;
-    std::unique_ptr<char[]> file_comment;
+    std::string file_comment;
 };
 
-class EndOfCentralDirectoryRecord : public ZipSeg {
+class EndOfCentralDirectoryRecord: public ZipSeg {
 public:
     void print() const override;
     bool readFromFile(std::ifstream& file) override;
+    // 静态函数：从文件末尾向前寻找EndOfCentralDirectoryRecord签名，返回找到的位置
+    static std::streampos findFromEnd(std::ifstream& file);
     ~EndOfCentralDirectoryRecord() = default;
 
 private:
@@ -79,7 +81,26 @@ private:
     uint32_t central_dir_size;
     uint32_t central_dir_offset;
     uint16_t zip_file_comment_length;
-    std::unique_ptr<char[]> zip_file_comment;
+    std::string zip_file_comment;
+};
+
+class ZipHandler {
+public:
+    ZipHandler(std::ifstream& file);
+    ~ZipHandler() = default;
+    bool parse(std::string mode);
+    bool parseStream();
+    bool parseStandard();
+    void print() const;
+    void printLocalFileHeaders() const;
+    void printCentralDirectoryHeaders() const;
+    void printEndOfCentralDirectoryRecord() const;
+
+private:
+    std::ifstream file;
+    std::vector<LocalFileHeader> local_file_headers;
+    std::vector<CentralDirectoryHeader> central_directory_headers;
+    EndOfCentralDirectoryRecord end_of_central_directory_record;
 };
 
 #endif /* ZIP_SEG_HPP */

@@ -20,17 +20,37 @@ bool ZipHandler::parseStandard() {
     if (!file.is_open() || !file.good()) {
         return false;
     }
-    // 解析End of Central Directory Record
-    // 使用修改后的findFromEnd函数找到记录位置
+
+    /* find EndOfCentralDirectoryRecord from end of file */
     std::streampos record_pos = EndOfCentralDirectoryRecord::findFromEnd(file);
     if (record_pos == -1) {
         return false;
     }
 
-    // 移动文件指针到记录位置并读取
+    /* move file pointer to record position and read */
     file.seekg(record_pos);
     if (!end_of_central_directory_record.readFromFile(file)) {
         return false;
+    }
+
+    /* move file pointer to start of central directory */
+    file.seekg(end_of_central_directory_record.getCentralDirOffset());
+
+    for (uint16_t i = 0; i < end_of_central_directory_record.getCentralDirRecordCount(); ++i) {
+        CentralDirectoryHeader header;
+        if (!header.readFromFile(file)) {
+            return false;
+        }
+        central_directory_headers.push_back(std::move(header));
+    }
+
+    for (const auto& header : central_directory_headers) {
+        file.seekg(header.getLocalFileHeaderOffset());
+        LocalFileHeader local_header;
+        if (!local_header.readFromFile(file)) {
+            return false;
+        }
+        local_file_headers.push_back(std::move(local_header));
     }
 
     return true;
@@ -141,7 +161,7 @@ void CentralDirectoryHeader::print() const {
     std::cout << "  Disk Number Start: " << disk_number_start << std::endl;
     std::cout << "  Internal Attr: 0x" << std::hex << internal_attr << std::dec << std::endl;
     std::cout << "  External Attr: 0x" << std::hex << external_attr << std::dec << std::endl;
-    std::cout << "  Relative Offset: 0x" << std::hex << relative_offset << std::dec << std::endl;
+    std::cout << "  Local Header Offset: 0x" << std::hex << local_header_offset << std::dec << std::endl;
 
     if (filename_length > 0) {
         std::cout << "  Filename: " << filename << std::endl;
@@ -178,7 +198,7 @@ bool CentralDirectoryHeader::readFromFile(std::ifstream& file) {
     disk_number_start = readLittleEndian<uint16_t>(file);
     internal_attr = readLittleEndian<uint16_t>(file);
     external_attr = readLittleEndian<uint32_t>(file);
-    relative_offset = readLittleEndian<uint32_t>(file);
+    local_header_offset = readLittleEndian<uint32_t>(file);
     // 读取文件名
     if (filename_length > 0) {
         filename = std::string(filename_length, '\0');

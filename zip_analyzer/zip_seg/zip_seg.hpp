@@ -6,6 +6,7 @@
 #include <fstream>
 #include <vector>
 
+/* virtual base class for zip segment */
 class ZipSeg {
 public:
     virtual void print() const = 0;
@@ -15,9 +16,24 @@ public:
 
 class LocalFileHeader: public ZipSeg {
 public:
+    /* define default constructor */
+    LocalFileHeader() :
+        signature(0), version_needed(0), general_bit_flag(0),
+        compression_method(0), last_mod_time(0), last_mod_date(0),
+        crc32(0), compressed_size(0), uncompressed_size(0),
+        filename_length(0), extra_field_length(0) {}
+
     void print() const override;
     bool readFromFile(std::ifstream& file) override;
     ~LocalFileHeader() = default;
+
+    /* define move constructor and assignment operator */
+    LocalFileHeader(LocalFileHeader&& other) noexcept = default;
+    LocalFileHeader& operator=(LocalFileHeader&& other) noexcept = default;
+
+    /* forbid copy constructor and assignment operator */
+    LocalFileHeader(const LocalFileHeader&) = delete;
+    LocalFileHeader& operator=(const LocalFileHeader&) = delete;
 
 private:
     uint32_t signature;
@@ -37,9 +53,27 @@ private:
 
 class CentralDirectoryHeader: public ZipSeg {
 public:
+    /* define default constructor */
+    CentralDirectoryHeader() :
+        signature(0), version_made_by(0), version_needed(0),
+        general_bit_flag(0), compression_method(0), last_mod_time(0),
+        last_mod_date(0), crc32(0), compressed_size(0), uncompressed_size(0),
+        filename_length(0), extra_field_length(0), file_comment_length(0),
+        disk_number_start(0), internal_attr(0), external_attr(0),
+        local_header_offset(0) {}
+
     void print() const override;
     bool readFromFile(std::ifstream& file) override;
+    std::streampos getLocalFileHeaderOffset() const { return local_header_offset; }
     ~CentralDirectoryHeader() = default;
+
+    /* define move constructor and assignment operator */
+    CentralDirectoryHeader(CentralDirectoryHeader&& other) noexcept = default;
+    CentralDirectoryHeader& operator=(CentralDirectoryHeader&& other) noexcept = default;
+
+    /* forbid copy constructor and assignment operator */
+    CentralDirectoryHeader(const CentralDirectoryHeader&) = delete;
+    CentralDirectoryHeader& operator=(const CentralDirectoryHeader&) = delete;
 
 private:
     uint32_t signature;
@@ -58,7 +92,7 @@ private:
     uint16_t disk_number_start;
     uint16_t internal_attr;
     uint32_t external_attr;
-    uint32_t relative_offset;
+    uint32_t local_header_offset;
     std::string filename;
     std::unique_ptr<uint8_t[]> extra_field;
     std::string file_comment;
@@ -68,8 +102,10 @@ class EndOfCentralDirectoryRecord: public ZipSeg {
 public:
     void print() const override;
     bool readFromFile(std::ifstream& file) override;
-    // 静态函数：从文件末尾向前寻找EndOfCentralDirectoryRecord签名，返回找到的位置
+    /* return the position of EndOfCentralDirectoryRecord signature found from end of file, or -1 if not found */
     static std::streampos findFromEnd(std::ifstream& file);
+    std::streampos getCentralDirOffset() const { return central_dir_offset; }
+    uint16_t getCentralDirRecordCount() const { return central_dir_record_count; }
     ~EndOfCentralDirectoryRecord() = default;
 
 private:

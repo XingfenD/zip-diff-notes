@@ -50,6 +50,9 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    /* print the parsed results */
+    zip_handler.print();
+
     file.close();
     return 0;
 }

@@ -15,9 +15,9 @@
 
 ## Content
 
-### ZIP文件结构图示
+### ZIP文件基础结构图示
 
-![ZIP文件结构图示](./pic/zip文件结构.png)
+![ZIP文件基础结构图示](./pic/zip文件结构.png)
 
 ZIP文件主要由三部分构成:
 
@@ -97,10 +97,124 @@ sequenceDiagram
     end
 ```
 
-## 手工篡改ZIP进行实验
+### 手工篡改ZIP进行实验
 
-`zip_analyze`目录为一个Zip解析器实例，可以使用两种解析模式读取Zip文件结构。另外该目录下包含两个Zip文件，分别为`zip_demo.zip`和`zip_demo_hacked.zip`。两者的区别在于`zip_demo_hacked.zip`在`zip_demo.zip`的基础上，在LFH区添加了一个额外的文件`hacked.txt`对应的LFH及其数据。具体如下图所示：
+`zip_analyze`目录为一个Zip解析器实例，可以使用两种解析模式读取未加密的Zip文件结构。另外该目录下包含两个Zip文件，分别为`zip_demo.zip`和`zip_demo_hacked.zip`。两者的区别在于`zip_demo_hacked.zip`在`zip_demo.zip`的基础上，在LFH区添加了一个额外的文件`hacked.txt`对应的LFH及其数据。具体如下图所示：
 
 ![zip_demo文件结构](./pic/zip_demo文件结构.png)
 
 ![zip_demo_hacked文件结构](./pic/zip_demo_hacked文件结构.png)
+
+使用解析器解析`zip_demo_hacked.zip`文件，在标准解析模式下，解析器忽略掉了仅在LFH中存在的`hacked.txt`文件；而在流式解析模式下，解析器能够成功解析出`hacked.txt`文件的信息。
+
+### Zip文件具体分析
+
+根据[官方文档](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT), Zip文件的结构如下:
+
+```plaintext
+[local file header 1]
+[encryption header 1]
+[file data 1]
+[data descriptor 1]
+.
+.
+.
+[local file header n]
+[encryption header n]
+[file data n]
+[data descriptor n]
+[archive decryption header]
+[archive extra data record]
+[central directory header 1]
+.
+.
+.
+[central directory header n]
+[zip64 end of central directory record]
+[zip64 end of central directory locator]
+[end of central directory record]
+```
+
+#### 本地文件头 - Local File Header
+
+```cpp
+    uint32_t signature;
+    uint16_t version_needed;
+    uint16_t general_bit_flag;
+    uint16_t compression_method;
+    uint16_t last_mod_time;
+    uint16_t last_mod_date;
+    uint32_t crc32;
+    uint32_t compressed_size;
+    uint32_t uncompressed_size;
+    uint16_t filename_length;
+    uint16_t extra_field_length;
+    std::string filename;
+    std::unique_ptr<uint8_t[]> extra_field;
+```
+
+本地文件头的extra_field没有固定的内容，不同的压缩器可能会在extra_field中添加不同的信息。但是在extra_field中添加信息时通常要遵循统一的结构: 标签 - 长度 - 数据。
+
+- Tag（2 字节）：标识该扩展块的类型（如操作系统相关信息、压缩算法扩展等）。
+- Length（2 字节）：表示后续数据的长度。
+- Data：具体的扩展数据，格式由 Tag 定义。
+
+具体标签值和含义的映射可以参考官方文档的4.5.2节，其中列举了由PKWARE定义的标签值和含义。
+
+##### general_bit_flag
+
+#### 加密头 - Encryption Header
+
+是否存在: 仅当`general_bit_flag`的第0位为1时，才存在加密头。加密头的具体长度和结构由具体的加密算法决定。
+
+#### 数据描述符 - Data Descriptor
+
+用于在流式压缩场景下，将压缩数据的CRC-32、压缩大小和未压缩大小等信息从文件数据中分离出来。
+
+由于lfh在文件数据之前，因此在流式压缩场景下，无法提前确定lfh中的crc32, compressed_size和uncompressed_size字段。此时，需要在文件数据之后添加一个数据描述符，用于存储这些信息。
+
+```cpp
+    uint32_t signature;             /* 0x08074b50 */
+    uint32_t crc32;
+    uint32_t compressed_size;
+    uint32_t uncompressed_size;
+```
+
+#### 归档解密头 - Archive Decryption Header
+
+暂略。
+
+#### 归档额外数据记录 - Archive Extra Data Record
+
+暂略。
+
+#### 中央目录头 - Central Directory Header
+
+```cpp
+    uint32_t signature;
+    uint16_t version_made_by;
+    uint16_t version_needed;
+    uint16_t general_bit_flag;
+    uint16_t compression_method;
+    uint16_t last_mod_time;
+    uint16_t last_mod_date;
+    uint32_t crc32;
+    uint32_t compressed_size;
+    uint32_t uncompressed_size;
+    uint16_t filename_length;
+    uint16_t extra_field_length;
+    uint16_t file_comment_length;
+    uint16_t disk_number_start;
+    uint16_t internal_attr;
+    uint32_t external_attr;
+    uint32_t local_header_offset;
+    std::string filename;
+    std::unique_ptr<uint8_t[]> extra_field;
+    std::string file_comment;
+```
+
+中央目录头与本地文件头之间存在许多冗余字段，原则上相对应的一对中央目录头和本地文件头，表示含义相同的字段值应该是相同的。
+
+## Questions
+
+- 考虑加密的情况下，zip文件结构会复杂很多，在后续工作中需要偏向考虑zip被加密的case嘛？
